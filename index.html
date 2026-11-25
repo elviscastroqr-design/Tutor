@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14505c">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <title>Tutor de Ingeniería de Sistemas</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #eef2f1; color: #1b2a2f; margin: 0; padding: 16px; }
+    .pagina { max-width: 640px; margin: 0 auto; }
+    h1 { color: #14505c; font-size: 24px; margin: 0 0 4px; }
+    .sub { margin: 0 0 14px; color: #44595f; }
+    .temas button { background: white; color: #14505c; border: 1px solid #14505c; border-radius: 16px; padding: 6px 12px; margin: 0 6px 8px 0; font-size: 14px; }
+    #chat { background: white; border: 2px solid #14505c; border-radius: 8px; padding: 12px; height: 55vh; overflow-y: auto; }
+    .mensaje { padding: 8px 12px; margin: 0 0 10px; border-radius: 8px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .tutor { background: #e1eeec; margin-right: 24px; }
+    .usuario { background: #14505c; color: white; margin-left: 24px; }
+    .entrada { display: flex; gap: 8px; margin-top: 10px; }
+    #pregunta { flex: 1; padding: 10px; font-size: 16px; border: 1px solid #14505c; border-radius: 6px; }
+    .entrada button, .guardar { background: #14505c; color: white; border: none; border-radius: 6px; padding: 10px 16px; font-size: 16px; }
+    button:disabled { opacity: 0.5; }
+    details { margin-top: 14px; font-size: 14px; }
+    summary { color: #14505c; }
+    details input { width: 100%; padding: 8px; margin: 8px 0; font-size: 14px; border: 1px solid #14505c; border-radius: 6px; }
+    .nota { color: #44595f; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="pagina">
+    <h1>Tutor de Ingeniería de Sistemas</h1>
+    <p class="sub">Una guía rápida, sencilla y gratis para aprender la carrera.</p>
+
+    <div class="temas">
+      <button onclick="preguntarTema('¿Qué es una variable?')">Variables</button>
+      <button onclick="preguntarTema('¿Qué es una pila (stack)?')">Pilas</button>
+      <button onclick="preguntarTema('¿Cómo funciona una red?')">Redes</button>
+      <button onclick="preguntarTema('¿Qué es una base de datos?')">Bases de datos</button>
+      <button onclick="preguntarTema('¿Qué es la ciberseguridad?')">Ciberseguridad</button>
+    </div>
+
+    <div id="chat">
+      <p class="mensaje tutor">Hola, ¿qué quieres aprender hoy? Toca un tema o escribe tu duda.</p>
+    </div>
+
+    <div class="entrada">
+      <input type="text" id="pregunta" placeholder="Escribe tu duda aquí">
+      <button id="boton" onclick="enviar()">Enviar</button>
+    </div>
+
+    <details id="ajustes">
+      <summary>Ajustes: clave de la IA</summary>
+      <p class="nota">Pega tu clave gratuita de Google AI Studio. Se guarda solo en este teléfono y nunca va dentro del código.</p>
+      <input type="password" id="clave" placeholder="Tu clave de API">
+      <button class="guardar" onclick="guardarClave()">Guardar clave</button>
+    </details>
+  </div>
+
+  <script>
+    // ----- CONFIGURACIÓN (puedes cambiar estas dos cosas) -----
+    // Si da error de modelo, cambia este nombre por uno vigente en AI Studio.
+    const MODELO = "gemini-flash-lite-latest";
+
+    // El prompt del tutor: su personalidad y método.
+    const PROMPT_TUTOR = `Eres un tutor experto en Ingeniería de Sistemas, paciente y muy didáctico.
+Tu estudiante está aprendiendo la carrera y tiene dudas.
+Áreas que dominas: programación, estructuras de datos, algoritmos, bases de datos, redes, sistemas operativos, ingeniería de software, arquitectura de computadores, inteligencia artificial y seguridad informática.
+Cómo debes responder SIEMPRE:
+1. Empieza con una explicación simple, con una analogía de la vida cotidiana.
+2. Luego explica la teoría con términos técnicos correctos.
+3. Da al menos un ejemplo práctico (con código si aplica), comentado.
+4. Propón un ejercicio pequeño para practicar.
+5. Cierra preguntando si quedó claro o qué quiere profundizar.
+Reglas: no asumas conceptos previos; corrige errores con amabilidad; si no estás seguro, dilo; responde en español, cercano y motivador; mantén las respuestas breves y fáciles de leer en un teléfono.`;
+
+    // ----- MEMORIA DE LA CONVERSACIÓN -----
+    let historial = []; // guarda los mensajes para que la IA recuerde el contexto
+
+    // ----- CLAVE (se guarda en el teléfono) -----
+    function leerClave() {
+      try { return localStorage.getItem("clave_ia") || ""; } catch (e) { return ""; }
+    }
+    function guardarClave() {
+      let clave = document.getElementById("clave").value.trim();
+      try { localStorage.setItem("clave_ia", clave); } catch (e) {}
+      document.getElementById("clave").value = "";
+      document.getElementById("ajustes").open = false;
+      agregarMensaje(clave ? "Clave guardada. Ya puedes preguntar." : "Clave borrada.", "tutor");
+    }
+
+    // ----- CHAT -----
+    function agregarMensaje(texto, quien) {
+      let chat = document.getElementById("chat");
+      let p = document.createElement("p");
+      p.className = "mensaje " + quien;
+      p.textContent = texto;
+      chat.appendChild(p);
+      chat.scrollTop = chat.scrollHeight;
+      return p;
+    }
+
+    async function pedirRespuesta() {
+      let clave = leerClave();
+      if (!clave) {
+        return "Necesito tu clave de la IA. Abre «Ajustes: clave de la IA», pégala y guárdala.";
+      }
+      let url = "https://generativelanguage.googleapis.com/v1beta/models/" + MODELO + ":generateContent";
+      try {
+        let respuesta = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": clave },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: PROMPT_TUTOR }] },
+            contents: historial
+          })
+        });
+        let datos = await respuesta.json();
+        if (!respuesta.ok) {
+          let detalle = datos.error && datos.error.message ? datos.error.message : "error desconocido";
+          return "La IA devolvió un error (" + respuesta.status + "): " + detalle;
+        }
+        return datos.candidates[0].content.parts[0].text;
+      } catch (e) {
+        return "No pude conectar. Revisa tu internet e inténtalo de nuevo.";
+      }
+    }
+
+    async function enviar() {
+      let campo = document.getElementById("pregunta");
+      let boton = document.getElementById("boton");
+      let texto = campo.value.trim();
+      if (texto === "") return;
+
+      agregarMensaje(texto, "usuario");
+      historial.push({ role: "user", parts: [{ text: texto }] });
+      campo.value = "";
+      boton.disabled = true;
+
+      let espera = agregarMensaje("Pensando...", "tutor");
+      let respuesta = await pedirRespuesta();
+      espera.textContent = respuesta;
+      historial.push({ role: "model", parts: [{ text: respuesta }] });
+      boton.disabled = false;
+    }
+
+    function preguntarTema(tema) {
+      document.getElementById("pregunta").value = tema;
+      enviar();
+    }
+
+    document.getElementById("pregunta").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") enviar();
+    });
+
+    // ----- INSTALACIÓN COMO APP -----
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  </script>
+</body>
+</html>
